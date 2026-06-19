@@ -353,13 +353,13 @@ async function onScan(texto){
   if(registrando)return;texto=(texto||'').trim();
   if(texto.toUpperCase().indexOf((APP_CFG.qrPrefijo||'JT:').toUpperCase())!==0){toast('Ese código no es válido. Escanea el de la entrada.','warn');return;}
   registrando=true;const hint=document.querySelector('.scan-hint');if(hint)hint.innerHTML='<span class="spinner" style="width:15px;height:15px"></span> Registrando…';
-  const r=await apiCarga('registrarAsistencia',{usuario:SESSION.usuario,deviceId:deviceId(),token:texto,lat:geo.lat,lng:geo.lng},'Registrando asistencia…');
+  const r=await apiCarga('registrarAsistencia',{usuario:SESSION.usuario,deviceId:deviceId(),token:texto,lat:geo.lat,lng:geo.lng,precision:geo.prec},'Registrando asistencia…');
   if(r&&r.ok){detenerCamara();const esEnt=r.tipo==='ENTRADA';
     $('colab-content').innerHTML='<div class="card-body"><div class="stamp '+(esEnt?'':'out')+' stamp-anim"><div class="label">'+(esEnt?'Entrada registrada':'Salida registrada')+'</div><div class="time">'+esc(hhmm(r.hora))+'</div><div class="date">'+esc(fechaLarga())+'</div><div class="punt">'+tagPunt(r.puntualidad,r.minutos)+'</div></div><div style="text-align:center;margin-top:14px"><button class="btn btn-ghost btn-sm" onclick="vistaColaborador()">'+(r.restantes>0?'Continuar ('+r.restantes+' marca'+(r.restantes>1?'s':'')+' restante'+(r.restantes>1?'s':'')+')':'Volver')+'</button></div></div>';
     toast(r.mensaje,'ok');registrando=false;
   }else{registrando=false;if(r&&r.completo){vistaColaborador();}else{if(hint)hint.innerHTML='<span class="dot"></span> Cámara activa · esperando código';toast((r&&r.mensaje)||'No se pudo registrar','err');}}
 }
-function pedirUbicacion(){if(!('geolocation' in navigator))return;navigator.geolocation.watchPosition(p=>{geo={lat:p.coords.latitude,lng:p.coords.longitude};},()=>{},{enableHighAccuracy:true,maximumAge:15000,timeout:15000});}
+function pedirUbicacion(){if(!('geolocation' in navigator))return;navigator.geolocation.watchPosition(p=>{geo={lat:p.coords.latitude,lng:p.coords.longitude,prec:Math.round(p.coords.accuracy)};},()=>{},{enableHighAccuracy:true,maximumAge:15000,timeout:15000});}
 
 // TABS
 function irTab(tab,btn){
