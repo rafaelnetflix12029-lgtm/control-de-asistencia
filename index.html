@@ -115,6 +115,13 @@
   .qr-box img{width:300px;max-width:74vw;height:auto;display:block}
   .screen-count{margin-top:22px;font-size:15px;color:var(--muted)} .screen-count b{font-family:'JetBrains Mono';color:var(--primary);font-size:18px}
   .screen-logout{position:fixed;top:18px;right:18px} .screen-prev .qr-box{min-width:240px;min-height:240px;padding:18px} .screen-prev .qr-box img{width:220px}
+  .loader-ov{display:none;position:fixed;inset:0;background:rgba(45,48,71,.38);z-index:100;align-items:center;justify-content:center;backdrop-filter:blur(2px)}
+  .loader-ov.show{display:flex;animation:fade .15s ease}
+  .loader-box{background:#fff;border-radius:16px;padding:22px 26px;display:flex;align-items:center;gap:14px;box-shadow:var(--shadow-lg);font-weight:600;font-size:14px;color:var(--ink)}
+  .loader-box.ok .spinner{display:none}
+  .loader-check{display:none;width:24px;height:24px;border-radius:50%;background:var(--ok);align-items:center;justify-content:center}
+  .loader-box.ok .loader-check{display:flex;animation:pop .3s cubic-bezier(.2,.8,.3,1.25)}
+  .loader-check svg{width:15px;height:15px;color:#fff}
   .toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(70px);opacity:0;background:var(--ink);color:#fff;padding:12px 19px;border-radius:12px;font-size:13.5px;font-weight:500;z-index:90;transition:.25s;box-shadow:var(--shadow-lg);max-width:90vw} .toast.show{transform:translateX(-50%) translateY(0);opacity:1} .toast.ok{background:var(--ok)}.toast.err{background:var(--danger)}.toast.warn{background:var(--warn)}
   .spinner{width:22px;height:22px;border:2.5px solid var(--line);border-top-color:var(--primary);border-radius:50%;animation:spin .7s linear infinite;display:inline-block} @keyframes spin{to{transform:rotate(360deg)}}
   .modal{display:none;position:fixed;inset:0;background:rgba(45,48,71,.45);z-index:80;align-items:center;justify-content:center;padding:20px;backdrop-filter:blur(2px)} .modal.show{display:flex}
@@ -244,6 +251,7 @@
 </div>
 
 <div class="modal" id="modal-del"><div class="modal-box"><h3>Eliminar usuario</h3><p id="modal-del-text"></p><div class="modal-actions"><button class="btn btn-ghost" onclick="cerrarModal()">Cancelar</button><button class="btn btn-danger" id="modal-del-ok">Eliminar</button></div></div></div>
+<div class="loader-ov" id="loader"><div class="loader-box" id="loader-box"><span class="spinner"></span><span class="loader-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span><span id="loader-msg">Cargando…</span></div></div>
 <div class="toast" id="toast"></div>
 
 <script>
@@ -261,6 +269,17 @@ async function api(fn,params){
     const ctrl=new AbortController(); const t=setTimeout(()=>ctrl.abort(),12000);
     const res=await fetch(url.toString(),{method:'GET',signal:ctrl.signal}); clearTimeout(t); return JSON.parse(await res.text());
   }catch(e){ return {error:true,mensaje:e.name==='AbortError'?'Sin respuesta del servidor.':'Error de conexión.'}; }
+}
+// Overlay de carga + confirmación visual de que la acción se realizó
+function cargando(msg){const b=$('loader-box');b.classList.remove('ok');$('loader-msg').textContent=msg||'Cargando…';$('loader').classList.add('show');}
+function listoOk(msg){const b=$('loader-box');b.classList.add('ok');$('loader-msg').textContent=msg||'Listo';setTimeout(()=>$('loader').classList.remove('show'),650);}
+function listoCerrar(){$('loader').classList.remove('show');}
+// Envuelve una llamada con overlay; muestra check si la respuesta es ok
+async function apiCarga(fn,params,msg){
+  cargando(msg);
+  const r=await api(fn,params);
+  if(r&&r.ok){listoOk(r.mensaje||'Hecho');}else{listoCerrar();}
+  return r;
 }
 function $(id){return document.getElementById(id);}
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
@@ -334,7 +353,7 @@ async function onScan(texto){
   if(registrando)return;texto=(texto||'').trim();
   if(texto.toUpperCase().indexOf((APP_CFG.qrPrefijo||'JT:').toUpperCase())!==0){toast('Ese código no es válido. Escanea el de la entrada.','warn');return;}
   registrando=true;const hint=document.querySelector('.scan-hint');if(hint)hint.innerHTML='<span class="spinner" style="width:15px;height:15px"></span> Registrando…';
-  const r=await api('registrarAsistencia',{usuario:SESSION.usuario,deviceId:deviceId(),token:texto,lat:geo.lat,lng:geo.lng});
+  const r=await apiCarga('registrarAsistencia',{usuario:SESSION.usuario,deviceId:deviceId(),token:texto,lat:geo.lat,lng:geo.lng},'Registrando asistencia…');
   if(r&&r.ok){detenerCamara();const esEnt=r.tipo==='ENTRADA';
     $('colab-content').innerHTML='<div class="card-body"><div class="stamp '+(esEnt?'':'out')+' stamp-anim"><div class="label">'+(esEnt?'Entrada registrada':'Salida registrada')+'</div><div class="time">'+esc(hhmm(r.hora))+'</div><div class="date">'+esc(fechaLarga())+'</div><div class="punt">'+tagPunt(r.puntualidad,r.minutos)+'</div></div><div style="text-align:center;margin-top:14px"><button class="btn btn-ghost btn-sm" onclick="vistaColaborador()">'+(r.restantes>0?'Continuar ('+r.restantes+' marca'+(r.restantes>1?'s':'')+' restante'+(r.restantes>1?'s':'')+')':'Volver')+'</button></div></div>';
     toast(r.mensaje,'ok');registrando=false;
@@ -379,7 +398,7 @@ async function cargarReporte(){
   const inclIngreso=$('r-ing').checked,inclSalida=$('r-sal').checked;
   if(!inclIngreso&&!inclSalida){toast('Selecciona entradas y/o salidas','warn');return;}
   $('r-body').innerHTML='<tr><td colspan="7" class="empty">Cargando…</td></tr>';
-  const r=await api('reportePorRango',{desde,hasta,area:$('r-area').value,usuario:$('r-usuario').value.trim(),inclIngreso,inclSalida});
+  const r=await apiCarga('reportePorRango',{desde,hasta,area:$('r-area').value,usuario:$('r-usuario').value.trim(),inclIngreso,inclSalida},'Generando reporte…');
   repData=(r&&r.registros)||[];
   $('b-pdf').disabled=!repData.length;$('b-csv').disabled=!repData.length;
   if(!repData.length){$('r-body').innerHTML='<tr><td colspan="7" class="empty">Sin registros con esos filtros.</td></tr>';$('r-count').textContent='';$('rep-stats').style.display='none';return;}
@@ -471,7 +490,7 @@ async function guardarUsuario(){
   const datos={adminUsuario:SESSION.usuario,usuario:$('u-usuario').value.trim(),nombre:$('u-nombre').value.trim(),area:$('u-area').value.trim(),rol:$('u-rol').value,pass:$('u-pass').value,horario:serializarHorario()};
   if(!datos.usuario||!datos.nombre){toast('Nombre y usuario son obligatorios','warn');return;}
   const b=$('u-save');b.disabled=true;b.textContent='Guardando…';
-  const r=await api(editando?'actualizarUsuario':'crearUsuario',datos);
+  const r=await apiCarga(editando?'actualizarUsuario':'crearUsuario',datos,'Guardando usuario…');
   b.disabled=false;b.textContent=editando?'Guardar cambios':'Crear usuario';
   if(r&&r.ok){toast(r.mensaje,'ok');cancelarEdicion();cargarUsuarios();}else toast((r&&r.mensaje)||'No se pudo guardar','err');
 }
@@ -482,8 +501,8 @@ function editarUsuario(i){
   $('u-form-title').textContent='Editar usuario';$('u-save').textContent='Guardar cambios';$('u-cancel').style.display='inline-flex';window.scrollTo({top:0,behavior:'smooth'});
 }
 function cancelarEdicion(){$('u-edit').value='';['u-nombre','u-area','u-usuario','u-pass'].forEach(id=>$(id).value='');$('u-usuario').disabled=false;$('u-pass').placeholder='Mínimo 4 caracteres';$('u-rol').value='colaborador';initHorario();renderDias();$('u-form-title').textContent='Nuevo usuario';$('u-save').textContent='Crear usuario';$('u-cancel').style.display='none';}
-async function toggleUsuario(usuario,activar){const r=await api('cambiarEstadoUsuario',{adminUsuario:SESSION.usuario,usuario,activo:activar});if(r&&r.ok){toast(r.mensaje,'ok');cargarUsuarios();}else toast((r&&r.mensaje)||'Error','err');}
-let delU='';function pedirEliminar(usuario,nombre){delU=usuario;$('modal-del-text').textContent='Se eliminará a "'+nombre+'". Esta acción no se puede deshacer.';$('modal-del').classList.add('show');$('modal-del-ok').onclick=async()=>{const r=await api('eliminarUsuario',{adminUsuario:SESSION.usuario,usuario:delU});cerrarModal();if(r&&r.ok){toast(r.mensaje,'ok');cargarUsuarios();}else toast((r&&r.mensaje)||'Error','err');};}
+async function toggleUsuario(usuario,activar){const r=await apiCarga('cambiarEstadoUsuario',{adminUsuario:SESSION.usuario,usuario,activo:activar},'Actualizando…');if(r&&r.ok){toast(r.mensaje,'ok');cargarUsuarios();}else toast((r&&r.mensaje)||'Error','err');}
+let delU='';function pedirEliminar(usuario,nombre){delU=usuario;$('modal-del-text').textContent='Se eliminará a "'+nombre+'". Esta acción no se puede deshacer.';$('modal-del').classList.add('show');$('modal-del-ok').onclick=async()=>{cerrarModal();const r=await apiCarga('eliminarUsuario',{adminUsuario:SESSION.usuario,usuario:delU},'Eliminando…');if(r&&r.ok){toast(r.mensaje,'ok');cargarUsuarios();}else toast((r&&r.mensaje)||'Error','err');};}
 function cerrarModal(){$('modal-del').classList.remove('show');}
 
 // UBICACIÓN
@@ -500,16 +519,29 @@ async function abrirMapa(){
 }
 function actualizarRadio(v){mapRadio=parseInt(v);$('geo-radio-val').textContent=mapRadio+' m';if(lcircle)lcircle.setRadius(mapRadio);}
 function usarMiUbicacion(){if(!('geolocation' in navigator)){toast('Tu dispositivo no tiene GPS','warn');return;}toast('Obteniendo tu ubicación…');navigator.geolocation.getCurrentPosition(p=>{mapLat=p.coords.latitude;mapLng=p.coords.longitude;if(lmarker){lmarker.setLatLng([mapLat,mapLng]);lcircle.setLatLng([mapLat,mapLng]);lmap.setView([mapLat,mapLng],17);}toast('Ubicación cargada','ok');},()=>toast('No se pudo obtener tu ubicación','err'),{enableHighAccuracy:true});}
-async function guardarUbicacion(){const r=await api('guardarConfig',{adminUsuario:SESSION.usuario,geoActivo:$('geo-on').checked,lat:mapLat,lng:mapLng,radio:mapRadio});if(r&&r.ok){toast(r.mensaje,'ok');APP_CFG.geoActivo=$('geo-on').checked;}else toast((r&&r.mensaje)||'Error','err');}
+async function guardarUbicacion(){const r=await apiCarga('guardarConfig',{adminUsuario:SESSION.usuario,geoActivo:$('geo-on').checked,lat:mapLat,lng:mapLng,radio:mapRadio},'Guardando ubicación…');if(r&&r.ok){toast(r.mensaje,'ok');APP_CFG.geoActivo=$('geo-on').checked;}else toast((r&&r.mensaje)||'Error','err');}
 
 // PANTALLA
 function iniciarPantalla(qrId,countId,setRef){
-  async function tick(){const r=await api('obtenerTokenLocal');if(!r||r.error){$(countId).textContent='No se pudo generar el código.';return;}
-    $(qrId).innerHTML='<img src="https://quickchart.io/qr?text='+encodeURIComponent(r.token)+'&size=320&ecLevel=M&margin=2" alt="Código">';
-    let seg=r.expiraEn;$(countId).innerHTML='Cambia en <b>'+seg+'</b> s';
-    const cd=setInterval(()=>{seg--;const el=$(countId);if(seg<=0){clearInterval(cd);return;}if(el)el.innerHTML='Cambia en <b>'+seg+'</b> s';},1000);
+  let seg=null, token=null, pidiendo=false;
+  async function pedir(){
+    if(pidiendo)return; pidiendo=true;
+    const r=await api('obtenerTokenLocal'); pidiendo=false;
+    if(r&&!r.error&&r.token){
+      // solo recreo la imagen si el token cambió (evita parpadeo)
+      if(token!==r.token){token=r.token;$(qrId).innerHTML='<img src="https://quickchart.io/qr?text='+encodeURIComponent(token)+'&size=320&ecLevel=M&margin=2" alt="Código">';}
+      seg=r.expiraEn;$(countId).innerHTML='Cambia en <b>'+seg+'</b> s';
+    }else if(!token){ $(countId).textContent='Reintentando…'; setTimeout(pedir,1500); }
   }
-  tick();const tm=setInterval(tick,(APP_CFG.qrSeg||60)*1000);setRef(tm);
+  // un solo loop de 1s: cuenta regresiva fluida y pide el siguiente token al llegar a 0
+  const tm=setInterval(()=>{
+    if(seg===null)return;
+    seg--;
+    if(seg<=0){ $(countId).innerHTML='Actualizando…'; pedir(); }
+    else { $(countId).innerHTML='Cambia en <b>'+seg+'</b> s'; }
+  },1000);
+  setRef(tm);
+  pedir();
 }
 
 window.addEventListener('load',()=>{const s=localStorage.getItem('jt_session');if(s){try{SESSION=JSON.parse(s);if(SESSION&&SESSION.usuario)abrirApp();}catch(e){}}});
